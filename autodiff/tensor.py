@@ -63,8 +63,10 @@ assignment.
 """
 
 from __future__ import annotations
+from os import name
 from typing import Callable, Optional, Tuple, List, Set
 import numpy as np
+from numpy._core.multiarray import scalar
 
 Array = np.ndarray
 
@@ -160,12 +162,30 @@ class Tensor:
         RuntimeError
             If called on a non-scalar tensor.
         """
-        # TODO:
-        #  - Assert `self` is scalar.
-        #  - Build topological order via depth-first search over ._prev.
-        #  - Seed self.grad with ones_like(self.data) if None.
-        #  - Iterate reversed(topo) and call v._backward().
-        raise NotImplementedError
+        assert self.data.size == 1, f"backward() can only be called on scalar outputs, got shape {self.data.shape}"
+
+        # 2. Build topological order via depth-first search over ._prev
+        topo = []
+        visited = set()
+
+        def build_topo(v):
+            if v not in visited:
+                visited.add(v)
+                for parent in v._prev:
+                    build_topo(parent)
+                topo.append(v)
+
+        build_topo(self)
+
+        # 3. Seed self.grad with ones_like(self.data) if None
+        if self.grad is None:
+            import numpy as np
+            self.grad = np.ones_like(self.data)
+
+        # 4. Iterate reversed(topo) and call v._backward()
+        for v in reversed(topo):
+            if hasattr(v, '_backward'):
+                v._backward()
 
     # -------- operations --------
     # All elementwise binary ops require identical shapes (no broadcasting).
@@ -219,8 +239,22 @@ class Tensor:
         --------
         dL/dself += dL/dout * (-1)
         """
-        # TODO: create out, set parents/op, implement _backward multiplying by -1
-        raise NotImplementedError
+
+        out = Tensor(
+            -self.data,
+            requires_grad=self.requires_grad,
+        )
+        out._prev = (self,)
+        out._op = "neg"
+
+        def _backward():
+            if self.requires_grad:
+                g = - out.grad  # same shape as self.data
+                self.grad = g if self.grad is None else self.grad + g
+
+        out._backward = _backward
+        return out
+
 
     def __sub__(self, other: Tensor) -> Tensor:
         """
@@ -239,8 +273,9 @@ class Tensor:
         ---
         You can implement as: return self + (-other)
         """
-        # TODO
-        raise NotImplementedError
+
+        return self + (-other)
+
 
     def __mul__(self, other: Tensor) -> Tensor:
         """
@@ -256,8 +291,28 @@ class Tensor:
           dL/dx += dL/dz * y
           dL/dy += dL/dz * x
         """
-        # TODO: check types/shapes, create out, set parents/op, implement local grads
-        raise NotImplementedError
+        if not isinstance(other, Tensor):
+            raise TypeError("Only Tensor * Tensor is supported (no broadcasting).")
+        assert self.data.shape == other.data.shape, "tensor shape mismatch (no broadcasting)"
+
+        out = Tensor(
+            self.data * other.data,
+            requires_grad=self.requires_grad or other.requires_grad,
+        )
+        out._prev = (self, other)
+        out._op = "mul"
+
+        def _backward():
+            if self.requires_grad:
+                g = out.grad  # same shape as self.data
+                self.grad = g*other.data if self.grad is None else self.grad + g*other.data
+            if other.requires_grad:
+                g = out.grad  # same shape as other.data
+                other.grad = g*self.data if other.grad is None else other.grad + g*self.data
+
+        out._backward = _backward
+        return out
+
 
     def __matmul__(self, other: Tensor) -> Tensor:
         """
@@ -278,8 +333,27 @@ class Tensor:
         ------
         AssertionError if shapes are not (n, d) @ (d,)
         """
-        # TODO: check shapes, compute out, set parents/op, implement grads as above
-        raise NotImplementedError
+        if not isinstance(other, Tensor):
+            raise TypeError("Only Tensor @ Tensor is supported (no broadcasting).")
+        assert self.data.shape[1] == other.data.shape[0], "tensor shape not able to multiply (no broadcasting)"
+
+        out = Tensor(
+            self.data @ other.data,
+            requires_grad=self.requires_grad or other.requires_grad,
+        )
+        out._prev = (self, other)
+        out._op = "matmul"
+
+        def _backward():
+            if self.requires_grad:
+                g = out.grad  # same shape as self.data
+                self.grad = g@other.data.T if self.grad is None else self.grad + g@other.data.T
+            if other.requires_grad:
+                g = out.grad  # same shape as other.data
+                other.grad = self.data.T @ g if other.grad is None else other.grad + self.data.T @ g
+
+        out._backward = _backward
+        return out
 
     def sum(self) -> Tensor:
         """
@@ -298,8 +372,22 @@ class Tensor:
         ----
         Multiplying the scalar incoming grad into an array of ones is fine.
         """
-        # TODO: create scalar out, set parent, implement backward with ones_like
-        raise NotImplementedError
+        out = Tensor(
+            self.data.sum(),
+            requires_grad=self.requires_grad,
+        )
+        out._prev = (self,)
+        out._op = "sum"
+
+        def _backward():
+            if self.requires_grad:
+                g = out.grad * np.ones_like(self.data)  # same shape as self.data
+                self.grad = g if self.grad is None else self.grad + g
+
+        out._backward = _backward
+
+        return out
+
 
     def mean(self) -> Tensor:
         """
@@ -318,8 +406,20 @@ class Tensor:
         ---
         Equivalent to sum() / N, but implement directly for clarity.
         """
-        # TODO: like sum(), but divide by N (self.data.size)
-        raise NotImplementedError
+        out = Tensor(
+            self.data.mean(),
+            requires_grad=self.requires_grad,
+        )
+        out._prev = (self,)
+        out._op = "mean"
+
+        def _backward():
+            if self.requires_grad:
+                g = out.grad * np.ones_like(self.data) / self.data.size  # same shape as self.data
+                self.grad = g if self.grad is None else self.grad + g
+
+        out._backward = _backward
+        return out
 
     # -------- debug/pretty --------
 
@@ -328,3 +428,11 @@ class Tensor:
             f"Tensor(data={self.data!r}, grad={self.grad!r}, "
             f"requires_grad={self.requires_grad})"
         )
+
+if __name__ == "__main__":
+
+    from autodiff.tensor import Tensor
+    x = Tensor([1.0, 2.0, 3.0], requires_grad=True)
+    y = (x * x).sum()
+    y.backward()
+    print(x.grad)
