@@ -15,24 +15,31 @@ def make_data(n=200, d=5, noise=0.1, seed=0):
     X_tilde = np.concatenate([X, np.ones((n, 1))], axis=1)
     return X_tilde, y  # y shape: (n,)
 
-def train(n=200, d=5, noise=0.1, lr=0.1, steps=200, seed=0):
+def train(n=200, d=5, noise=0.1, lr=0.01, steps=200, seed=0):
     X_np, y_np = make_data(n=n, d=d, noise=noise, seed=seed)
     X = Tensor(X_np)                          # data tensors: no grads
     y = Tensor(y_np)
+
+    w = Tensor(np.random.randn(d+1,) *0.1 , requires_grad=True)
     # TODO(1): initialize parameters (requires_grad=True).
 
     log_every = 50  # print step 0, 50, 100, ...
 
     for t in range(steps):
         # TODO(2): prediction using your Tensor ops (shape: (n,))
+        y_predict=X @ w
 
         # TODO(3): mean squared error loss using your Tensor ops (scalar)
+        loss = ((y-y_predict) * (y-y_predict)).mean()
 
         # log BEFORE the update so step 0 shows the initial loss
         if t % log_every == 0:
             print(f"step {t:3d} | loss={loss.data:.6f}")
 
         # TODO(4): zero grads, backprop, and SGD step
+        w.zero_grad()
+        loss.backward()
+        w.data -= lr * np.asarray(w.grad.data)
 
     # metrics back on NumPy
     mse = ((X_np @ w.data - y_np) ** 2).mean()
