@@ -21,22 +21,22 @@ def train(n=200, d=5, noise=0.1, lr=0.01, steps=200, seed=0):
     y = Tensor(y_np)
 
     w = Tensor(np.random.randn(d+1,) *0.1 , requires_grad=True)
-    # TODO(1): initialize parameters (requires_grad=True).
+    # initialize parameters (requires_grad=True).
 
     log_every = 50  # print step 0, 50, 100, ...
 
     for t in range(steps):
-        # TODO(2): prediction using your Tensor ops (shape: (n,))
+        # prediction using your Tensor ops (shape: (n,))
         y_predict=X @ w
 
-        # TODO(3): mean squared error loss using your Tensor ops (scalar)
+        # mean squared error loss using your Tensor ops (scalar)
         loss = ((y-y_predict) * (y-y_predict)).mean()
 
         # log BEFORE the update so step 0 shows the initial loss
         if t % log_every == 0:
             print(f"step {t:3d} | loss={loss.data:.6f}")
 
-        # TODO(4): zero grads, backprop, and SGD step
+        # zero grads, backprop, and SGD step
         w.zero_grad()
         loss.backward()
         w.data -= lr * np.asarray(w.grad.data)
@@ -44,6 +44,7 @@ def train(n=200, d=5, noise=0.1, lr=0.01, steps=200, seed=0):
     # metrics back on NumPy
     mse = ((X_np @ w.data - y_np) ** 2).mean()
     return {"mse": float(mse), "w": w.data.tolist()}
+
 
 def main():
     ap = argparse.ArgumentParser()

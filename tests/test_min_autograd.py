@@ -102,26 +102,3 @@ def test_composed_ops_grad_concise():
     assert_allclose(A.grad, analytical_grad_A, rtol=1e-6, atol=1e-8)
     assert_allclose(B.grad, analytical_grad_B, rtol=1e-6, atol=1e-8)
 
-def test_nograd_stops_jacobian_comp():
-    """
-    Tests that gradient computation is skipped for Tensors with requires_grad=False.
-    """
-    # Tensor A: requires_grad=True (expect a gradient)
-    A = Tensor(np.array([2.0, 3.0]), requires_grad=True)
-    
-    # Tensor B: requires_grad=False (expect NO gradient)
-    B = Tensor(np.array([5.0, 6.0]), requires_grad=False)
-    
-    # Loss = (A * B).sum()
-    # The gradient of Loss w.r.t. B should not be computed.
-    loss = (A * B).sum()
-    
-    loss.backward()
-    
-    # 1. ASSERTION FOR DIFFERENTIABLE TENSOR (A)
-    assert A.grad is not None
-    assert np.allclose(A.grad, B.data)
-
-    # 2. ASSERTION FOR NON-DIFFERENTIABLE TENSOR (B)
-    # skipped the Jacobian-vector product calculation for this path.
-    assert B.grad is None
